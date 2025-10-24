@@ -1,1 +1,3 @@
 git_restore_mtime.py
+.coverage
+__pycache__
