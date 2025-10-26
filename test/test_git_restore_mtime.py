@@ -162,3 +162,42 @@ def test_missing():
         assert get_mtime_path(f"{git_dir}/file1") == 1761123456.0
         assert get_mtime_path(f"{git_dir}/file2") == 1761123457.0
         assert get_mtime_path(f"{git_dir}/file3") == 1761123458.0
+
+
+def test_dirty():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        git_dir = f"{tmpdir}/git"
+
+        git_init(git_dir)
+        git_add(git_dir, "a", files=["file1"])
+        git_commit(git_dir, date="1761123456 UTC")
+
+        with open(f'{git_dir}/file1', 'w') as f:
+            f.write("dirty")
+
+        subprocess.check_call(["git", "status", "--porcelain"], cwd=git_dir)
+
+        p = multiprocessing.Process(target=get_git_restore_mtime, args=(tmpdir, "", "--cwd", git_dir))
+        p.start()
+        p.join()
+
+        assert get_mtime_path(f"{git_dir}/file1") != 1761123456.0
+
+def test_force():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        git_dir = f"{tmpdir}/git"
+
+        git_init(git_dir)
+        git_add(git_dir, "a", files=["file1"])
+        git_commit(git_dir, date="1761123456 UTC")
+
+        with open(f'{git_dir}/file1', 'w') as f:
+            f.write("dirty")
+
+        subprocess.check_call(["git", "status", "--porcelain"], cwd=git_dir)
+
+        p = multiprocessing.Process(target=get_git_restore_mtime, args=(tmpdir, "", "--cwd", git_dir, "--force"))
+        p.start()
+        p.join()
+
+        assert get_mtime_path(f"{git_dir}/file1") == 1761123456.0
