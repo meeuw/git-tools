@@ -45,10 +45,6 @@ def git_switch(d, branch, create=False):
     subprocess.check_call(cmd_list, cwd=d)
 
 
-def git_merge(d, branch):
-    subprocess.check_call(["git", "merge", "--no-ff", branch, "--no-edit", "-s", "ours"], cwd=d)
-
-
 def get_mtime_path(path):
     return os.stat(path).st_mtime
 
@@ -148,28 +144,21 @@ def test_missing():
 
         git_switch(git_dir, "branch1", True)
 
-        git_add(git_dir, "a", files=["file2"])
-        git_commit(git_dir, date="1761123456 UTC")
-
-        git_switch(git_dir, "master")
-
-        git_switch(git_dir, "branch2", True)
-
         git_add(git_dir, "b", files=["file2"])
-        git_commit(git_dir, date="1761123456 UTC")
-
-        git_switch(git_dir, "branch1")
-
-        git_merge(git_dir, "branch2")
+        git_commit(git_dir, date="1761123457 UTC")
 
         git_switch(git_dir, "master")
 
-        git_merge(git_dir, "branch1")
+        subprocess.check_call(["git", "merge", "--no-ff", "--no-commit", "branch1"], cwd=git_dir)
 
-        subprocess.check_call(["git", "log", "--graph", "--raw", "--no-show-signature"], cwd=git_dir)
+        git_add(git_dir, "b", files=["file3"])
 
-        p = multiprocessing.Process(target=get_git_restore_mtime, args=(tmpdir, "", "--cwd", git_dir, "--merge"))
+        git_commit(git_dir, date="1761123458 UTC")
+
+        p = multiprocessing.Process(target=get_git_restore_mtime, args=(tmpdir, "", "--cwd", git_dir))
         p.start()
         p.join()
 
         assert get_mtime_path(f"{git_dir}/file1") == 1761123456.0
+        assert get_mtime_path(f"{git_dir}/file2") == 1761123457.0
+        assert get_mtime_path(f"{git_dir}/file3") == 1761123458.0
