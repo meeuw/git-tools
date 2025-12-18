@@ -518,7 +518,6 @@ def main():
     # Otherwise, ignore any dirty files
     else:
         dirty = set(git.ls_dirty())
-        print(dirty)
         if dirty:
             log.warning("WARNING: Modified files in the working directory were ignored."
                 "\nTo include such files, commit your changes or use --force.")
