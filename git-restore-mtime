@@ -62,7 +62,8 @@ assuming the actual modification date and its commit date are close.
 #   painfully slow. First pass without merge commits is not accurate. Maybe add a new
 #   `--accurate` mode for `--cc`?
 
-if __name__ != "__main__":
+import sys
+if __name__ != "__main__" and "pytest" not in sys.modules:
     raise ImportError("{} should not be used as a module.".format(__name__))
 
 import argparse
@@ -72,7 +73,6 @@ import os.path
 import shlex
 import signal
 import subprocess
-import sys
 import time
 
 if sys.version_info < (3, 8):
@@ -95,7 +95,7 @@ UTIME_KWS = {} if not UPDATE_SYMLINKS else {'follow_symlinks': False}
 
 # Command-line interface ######################################################
 
-def parse_args():
+def parse_args(argv=None):
     parser = argparse.ArgumentParser(
         description=__doc__.split('\n---')[0])
 
@@ -204,10 +204,25 @@ def parse_args():
     parser.add_argument('--version', '-V', action='version',
         version='%(prog)s version {version}'.format(version=get_version()))
 
-    args_ = parser.parse_args()
+    args_ = parser.parse_args(argv)
     if args_.verbose:
         args_.loglevel = max(logging.TRACE, logging.DEBUG // args_.verbose)
     args_.debug = args_.loglevel <= logging.DEBUG
+
+    # Keep only essential, global assignments here. Any other logic must be in main()
+
+    # Set the actual touch() and other functions based on command-line arguments
+    if args_.unique_times:
+        args_.touch = touch_ns
+        args_.isodate = isodate_ns
+    else:
+        args_.touch = touch
+        args_.isodate = isodate
+
+    # Make sure this is always set last to ensure --test behaves as intended
+    if args_.test:
+        args_.touch = dummy
+
     return args_
 
 
@@ -375,9 +390,9 @@ class Git:
         """Error from git executable"""
 
 
-def parse_log(filelist, dirlist, stats, git, merge=False, filterlist=None):
+def parse_log(args, filelist, dirlist, stats, git, merge=False, filterlist=None):
     mtime = 0
-    datestr = isodate(0)
+    datestr = args.isodate(0)
     for line in git.log(
             merge,
             args.first_parent,
@@ -398,7 +413,7 @@ def parse_log(filelist, dirlist, stats, git, merge=False, filterlist=None):
             if args.unique_times:
                 mtime = get_mtime_ns(mtime, stats['commits'])
             if args.debug:
-                datestr = isodate(mtime)
+                datestr = args.isodate(mtime)
             continue
 
         # File line: three tokens if it describes a renaming, otherwise two
@@ -426,7 +441,7 @@ def parse_log(filelist, dirlist, stats, git, merge=False, filterlist=None):
                           stats['loglines'], stats['commits'], stats['files'],
                           datestr, file)
             try:
-                touch(os.path.join(git.workdir, file), mtime)
+                args.touch(os.path.join(git.workdir, file), mtime)
                 stats['touches'] += 1
             except Exception as e:
                 log.error("ERROR: %s: %s", e, file)
@@ -438,7 +453,7 @@ def parse_log(filelist, dirlist, stats, git, merge=False, filterlist=None):
                           stats['loglines'], stats['commits'],
                           datestr, "{}/".format(dirname or '.'))
             try:
-                touch(os.path.join(git.workdir, dirname), mtime)
+                args.touch(os.path.join(git.workdir, dirname), mtime)
                 stats['dirtouches'] += 1
             except Exception as e:
                 log.error("ERROR: %s: %s", e, dirname)
@@ -463,7 +478,7 @@ def parse_log(filelist, dirlist, stats, git, merge=False, filterlist=None):
 
 # Main Logic ##################################################################
 
-def main():
+def main(args):
     start = time.time()  # yes, Wall time. CPU time is not realistic for users.
     stats = {_: 0 for _ in ('loglines', 'commits', 'touches', 'skip', 'errors',
                             'dirtouches', 'direrrors')}
@@ -535,7 +550,7 @@ def main():
 
     # Process the log until all files are 'touched'
     log.debug("Line #\tLog #\tF.Left\tModification Time\tFile Name")
-    parse_log(filelist, dirlist, stats, git, args.merge, args.pathspec)
+    parse_log(args, filelist, dirlist, stats, git, args.merge, args.pathspec)
 
     # Missing files
     if filelist:
@@ -546,7 +561,7 @@ def main():
             missing = len(filterlist)
             log.info("{0:,} files not found in log, trying merge commits".format(missing))
             for i in range(0, missing, STEPMISSING):
-                parse_log(filelist, dirlist, stats, git,
+                parse_log(args, filelist, dirlist, stats, git,
                           merge=True, filterlist=filterlist[i:i + STEPMISSING])
 
         # Still missing some?
@@ -584,23 +599,15 @@ def main():
         log.info("TEST RUN - No files modified!")
 
 
-# Keep only essential, global assignments here. Any other logic must be in main()
 log = setup_logging()
-args = parse_args()
 
-# Set the actual touch() and other functions based on command-line arguments
-if args.unique_times:
-    touch = touch_ns
-    isodate = isodate_ns
 
-# Make sure this is always set last to ensure --test behaves as intended
-if args.test:
-    touch = dummy
-
-# UI done, it's showtime!
-try:
-    sys.exit(main())
-except KeyboardInterrupt:
-    log.info("\nAborting")
-    signal.signal(signal.SIGINT, signal.SIG_DFL)
-    os.kill(os.getpid(), signal.SIGINT)
+if __name__ == "__main__":
+    args = parse_args(sys.argv[1:])
+    # UI done, it's showtime!
+    try:
+        sys.exit(main(args))
+    except KeyboardInterrupt:
+        log.info("\nAborting")
+        signal.signal(signal.SIGINT, signal.SIG_DFL)
+        os.kill(os.getpid(), signal.SIGINT)

@@ -1,18 +1,7 @@
-import multiprocessing
-from importlib.util import spec_from_loader, module_from_spec
-from importlib.machinery import SourceFileLoader
-import sys
 import os
 import tempfile
-import shutil
 import subprocess
-
-
-def get_git_restore_mtime(tmpdir, *args):
-    sys.argv = args
-    spec = spec_from_loader("__main__", SourceFileLoader("__main__", "git-restore-mtime"))
-    git_restore_mtime = module_from_spec(spec)
-    spec.loader.exec_module(git_restore_mtime)
+from git_restore_mtime import main, parse_args
 
 
 def git_init(d):
@@ -59,9 +48,7 @@ def test_main():
         git_add(git_dir, "b", files=["file2"])
         git_commit(git_dir, date="1761123457 UTC")
 
-        p = multiprocessing.Process(target=get_git_restore_mtime, args=(tmpdir, "", "--cwd", git_dir))
-        p.start()
-        p.join()
+        main(parse_args(("--cwd", git_dir)))
 
         assert get_mtime_path(f"{git_dir}/file1") == 1761123456.0
         assert get_mtime_path(f"{git_dir}/file2") == 1761123457.0
@@ -76,15 +63,11 @@ def test_skip_older_than():
         git_add(git_dir, symlink="file1", files=["file2"])
         git_commit(git_dir, date="1761123456 UTC")
 
-        p = multiprocessing.Process(target=get_git_restore_mtime, args=(tmpdir, "", "--cwd", git_dir, "--skip-older-than", "-1000000000"))
-        p.start()
-        p.join()
+        main(parse_args(("--cwd", git_dir, "--skip-older-than", "-1000000000")))
 
         assert get_mtime_path(f"{git_dir}/file1") != 1761123456.0
 
-        p = multiprocessing.Process(target=get_git_restore_mtime, args=(tmpdir, "", "--cwd", git_dir, "--skip-older-than", "1000000000"))
-        p.start()
-        p.join()
+        main(parse_args(("--cwd", git_dir, "--skip-older-than", "1000000000")))
 
         assert get_mtime_path(f"{git_dir}/file1") == 1761123456.0
 
@@ -97,9 +80,7 @@ def test_unique_times():
         git_add(git_dir, "a", files=["file1"])
         git_commit(git_dir, date="1761123456 UTC")
 
-        p = multiprocessing.Process(target=get_git_restore_mtime, args=(tmpdir, "", "--cwd", git_dir, "--unique-times"))
-        p.start()
-        p.join()
+        main(parse_args(("--cwd", git_dir, "--unique-times")))
 
         assert get_mtime_path(f"{git_dir}/file1") == 1761123456.000001
 
@@ -112,9 +93,7 @@ def test_verbose():
         git_add(git_dir, "a", files=["file1"])
         git_commit(git_dir, date="1761123456 UTC")
 
-        p = multiprocessing.Process(target=get_git_restore_mtime, args=(tmpdir, "", "--cwd", git_dir, "--verbose"))
-        p.start()
-        p.join()
+        main(parse_args(("--cwd", git_dir, "--verbose")))
 
         assert get_mtime_path(f"{git_dir}/file1") == 1761123456.0
 
@@ -127,9 +106,7 @@ def test_test():
         git_add(git_dir, "a", files=["file1"])
         git_commit(git_dir, date="1761123456 UTC")
 
-        p = multiprocessing.Process(target=get_git_restore_mtime, args=(tmpdir, "", "--cwd", git_dir, "--test"))
-        p.start()
-        p.join()
+        main(parse_args(("--cwd", git_dir, "--test")))
 
         assert get_mtime_path(f"{git_dir}/file1") != 1761123456.0
 
@@ -155,9 +132,7 @@ def test_missing():
 
         git_commit(git_dir, date="1761123458 UTC")
 
-        p = multiprocessing.Process(target=get_git_restore_mtime, args=(tmpdir, "", "--cwd", git_dir))
-        p.start()
-        p.join()
+        main(parse_args(("--cwd", git_dir)))
 
         assert get_mtime_path(f"{git_dir}/file1") == 1761123456.0
         assert get_mtime_path(f"{git_dir}/file2") == 1761123457.0
@@ -177,9 +152,7 @@ def test_dirty():
 
         subprocess.check_call(["git", "status", "--porcelain"], cwd=git_dir)
 
-        p = multiprocessing.Process(target=get_git_restore_mtime, args=(tmpdir, "", "--cwd", git_dir))
-        p.start()
-        p.join()
+        main(parse_args(("--cwd", git_dir)))
 
         assert get_mtime_path(f"{git_dir}/file1") != 1761123456.0
 
@@ -196,8 +169,6 @@ def test_force():
 
         subprocess.check_call(["git", "status", "--porcelain"], cwd=git_dir)
 
-        p = multiprocessing.Process(target=get_git_restore_mtime, args=(tmpdir, "", "--cwd", git_dir, "--force"))
-        p.start()
-        p.join()
+        main(parse_args(("--cwd", git_dir, "--force")))
 
         assert get_mtime_path(f"{git_dir}/file1") == 1761123456.0
